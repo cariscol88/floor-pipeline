@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Floor Publisher WebRTC</title>
+<style>
+  body { font-family: Arial; padding: 20px; }
+  select, button { font-size: 16px; margin: 5px 0; }
+  #status { margin-top: 20px; color: green; }
+</style>
+</head>
+<body>
+<h2>Floor Publisher</h2>
+
+<label for="audioSelect">Seleccionar dispositivo de audio:</label>
+<select id="audioSelect"></select>
+<br>
+<button id="startBtn">Iniciar transmisión</button>
+
+<div id="status"></div>
+
+<script>
+const serverUrl = "https://just-fulfillment-production.up.railway.app/offer";
+let pc;
+
+async function loadAudioDevices() {
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const audioInputs = devices.filter(d => d.kind === "audioinput");
+  const select = document.getElementById("audioSelect");
+  audioInputs.forEach((d, i) => {
+    const option = document.createElement("option");
+    option.value = d.deviceId;
+    option.text = d.label || `Mic ${i+1}`;
+    select.appendChild(option);
+  });
+}
+
+async function startPublishing() {
+  const statusDiv = document.getElementById("status");
+  statusDiv.textContent = "Conectando...";
+
+  const selectedDeviceId = document.getElementById("audioSelect").value;
+
+  const stream = await navigator.mediaDevices.getUserMedia({
+    audio: { deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined }
+  });
+
+  pc = new RTCPeerConnection();
+
+  stream.getTracks().forEach(track => pc.addTrack(track, stream));
+
+  const offer = await pc.createOffer();
+  await pc.setLocalDescription(offer);
+
+  const response = await fetch(serverUrl, {
+    method: "POST",
+    body: JSON.stringify({ sdp: offer.sdp, type: offer.type }),
+    headers: { "Content-Type": "application/json" }
+  });
+
+  if (!response.ok) {
+    statusDiv.style.color = "red";
+    statusDiv.textContent = `Error al conectar: ${response.status}`;
+    return;
+  }
+
+  const answer = await response.json();
+  await pc.setRemoteDescription(answer);
+
+  statusDiv.style.color = "green";
+  statusDiv.textContent = "Transmisión activa!";
+}
+
+document.getElementById("startBtn").addEventListener("click", startPublishing);
+window.onload = loadAudioDevices;
+</script>
+</body>
+</html>
